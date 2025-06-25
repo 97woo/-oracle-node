@@ -34,8 +34,8 @@ tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
-# Time
-chrono = { workspace = true }
+# Time  
+chrono = { workspace = true, features = ["serde", "std"] }
 
 # CLI
 clap = { workspace = true }

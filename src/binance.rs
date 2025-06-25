@@ -1,24 +1,20 @@
 use anyhow::{Result, Context};
-use serde::Deserialize;
 use reqwest::Client;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, warn, error};
 use crate::PriceData;
 
-/// 바이낸스 API 주소
-const BINANCE_API_URL: &str = "https://api.binance.com/api/v3/ticker/price";
+/// 바이낸스 K-line API 주소 (1분 캔들스틱)
+const BINANCE_API_URL: &str = "https://api.binance.com/api/v3/klines";
 /// 최대 재시도 횟수
 const MAX_RETRIES: u32 = 3;
 /// HTTP 요청 타임아웃 (초)
 const REQUEST_TIMEOUT: u64 = 10;
 
-/// 바이낸스에서 받아오는 가격 데이터 구조
-#[derive(Debug, Deserialize)]
-struct BinancePriceResponse {
-    symbol: String,  // 코인 이름 (예: "BTCUSDT")
-    price: String,   // 가격 (문자열로 옴, 예: "43521.50")
-}
+/// 바이낸스에서 받아오는 K-line 데이터 구조
+/// [open_time, open, high, low, close, volume, close_time, quote_volume, count, taker_buy_volume, taker_buy_quote_volume, ignore]
+type BinanceKlineResponse = Vec<[serde_json::Value; 12]>;
 
 /// 바이낸스와 통신하는 클라이언트
 pub struct BinanceClient {
@@ -70,8 +66,8 @@ impl BinanceClient {
 
     /// 한 번만 가격을 가져오기 (재시도 없음)
     async fn fetch_btc_price_once(&self) -> Result<PriceData> {
-        // 1. 요청할 URL 만들기
-        let url = format!("{}?symbol=BTCUSDT", BINANCE_API_URL);
+        // 1. 1분 K-line 데이터 요청 (최근 1개)
+        let url = format!("{}?symbol=BTCUSDT&interval=1m&limit=1", BINANCE_API_URL);
         
         // 2. 바이낸스에 HTTP 요청 보내기
         let response = self.client
@@ -85,16 +81,24 @@ impl BinanceClient {
             return self.handle_http_error(response.status().as_u16());
         }
         
-        // 4. JSON 응답을 구조체로 변환
-        let binance_data: BinancePriceResponse = response
+        // 4. JSON 응답을 K-line 배열로 변환
+        let klines: BinanceKlineResponse = response
             .json()
             .await
             .context("Failed to parse Binance JSON response")?;
         
-        // 5. 가격 문자열을 숫자로 변환
-        let price = binance_data.price
+        if klines.is_empty() {
+            anyhow::bail!("No K-line data received from Binance");
+        }
+        
+        // 5. 가장 최근 K-line의 종가 사용 (index 4 = close price)
+        let latest_kline = &klines[0];
+        let close_price_str = latest_kline[4].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get close price from Binance K-line"))?;
+        
+        let price = close_price_str
             .parse::<f64>()
-            .context("Failed to parse price as number")?;
+            .context("Failed to parse close price as number")?;
         
         // 6. 가격이 말이 되는지 검증
         self.validate_price(price)?;
@@ -116,7 +120,7 @@ impl BinanceClient {
             400 => anyhow::bail!("Bad request - Check API parameters"),
             401 => anyhow::bail!("Unauthorized - API key issue"),
             403 => anyhow::bail!("Forbidden - Access denied"),
-            404 => anyhow::bail!("Not found - Check symbol (BTCUSDT)"),
+            404 => anyhow::bail!("Not found - Check symbol/interval (BTCUSDT/1m)"),
             429 => anyhow::bail!("Rate limit exceeded - Too many requests"),
             500..=599 => anyhow::bail!("Binance server error - Try again later"),
             _ => anyhow::bail!("HTTP error: {}", status_code),
