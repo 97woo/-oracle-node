@@ -46,6 +46,9 @@ secp256k1 = { workspace = true }
 # Config
 toml = "0.8"
 
+# UUID generation
+uuid = { version = "1.6", features = ["v4"] }
+
 [dev-dependencies]
 proptest = { workspace = true }
 mockall = { workspace = true }
