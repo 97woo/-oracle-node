@@ -3,6 +3,7 @@ use reqwest::Client;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, warn, error};
+use chrono::Timelike;
 use crate::PriceData;
 
 /// 바이낸스 K-line API 주소 (1분 캔들스틱)
@@ -66,8 +67,22 @@ impl BinanceClient {
 
     /// 한 번만 가격을 가져오기 (재시도 없음)
     async fn fetch_btc_price_once(&self) -> Result<PriceData> {
-        // 1. 1분 K-line 데이터 요청 (최근 1개)
-        let url = format!("{}?symbol=BTCUSDT&interval=1m&limit=1", BINANCE_API_URL);
+        // 현재 시간에서 이전 완성된 분봉 시점 계산
+        let now = chrono::Utc::now();
+        // 현재 분의 00초로 맞추기 (예: 14:37:XX -> 14:37:00)
+        let current_minute_start = now.with_second(0).unwrap().with_nanosecond(0).unwrap();
+        // 이전 분봉 가져오기 (예: 14:36:00 ~ 14:37:00)
+        let target_minute_start = current_minute_start - chrono::Duration::minutes(1);
+        
+        let start_time = target_minute_start.timestamp() * 1000; // 밀리초 단위
+        let end_time = current_minute_start.timestamp() * 1000;
+        
+        info!("🎯 Binance: Requesting K-line for {} UTC", 
+              target_minute_start.format("%H:%M:%S"));
+        
+        // 1. 특정 시점의 1분 K-line 데이터 요청
+        let url = format!("{}?symbol=BTCUSDT&interval=1m&startTime={}&endTime={}&limit=1", 
+                         BINANCE_API_URL, start_time, end_time);
         
         // 2. 바이낸스에 HTTP 요청 보내기
         let response = self.client
@@ -93,12 +108,30 @@ impl BinanceClient {
         
         // 5. 가장 최근 K-line의 종가 사용 (index 4 = close price)
         let latest_kline = &klines[0];
+        
+        // K-line 시간 정보 추출
+        let open_time = latest_kline[0].as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get open time from Binance K-line"))?;
+        let close_time = latest_kline[6].as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get close time from Binance K-line"))?;
+        
         let close_price_str = latest_kline[4].as_str()
             .ok_or_else(|| anyhow::anyhow!("Failed to get close price from Binance K-line"))?;
         
         let price = close_price_str
             .parse::<f64>()
             .context("Failed to parse close price as number")?;
+        
+        // K-line 시간 정보 로깅
+        let open_time_dt = chrono::DateTime::from_timestamp(open_time as i64 / 1000, 0)
+            .unwrap_or_default();
+        let close_time_dt = chrono::DateTime::from_timestamp(close_time as i64 / 1000, 0)
+            .unwrap_or_default();
+        
+        info!("📊 Binance K-line: {:.2} USD (period: {} ~ {})", 
+              price, 
+              open_time_dt.format("%H:%M:%S"),
+              close_time_dt.format("%H:%M:%S"));
         
         // 6. 가격이 말이 되는지 검증
         self.validate_price(price)?;

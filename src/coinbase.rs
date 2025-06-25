@@ -3,6 +3,7 @@ use reqwest::Client;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, warn, error};
+use chrono::Timelike;
 use crate::PriceData;
 
 /// Coinbase Pro API URL
@@ -66,11 +67,22 @@ impl CoinbaseClient {
 
     /// 한 번만 가격을 가져오기 (재시도 없음)
     async fn fetch_btc_price_once(&self) -> Result<PriceData> {
-        // 1분 캔들스틱 데이터 요청 (최근 1개)
+        // 현재 시간에서 이전 완성된 분봉 시점 계산
+        let now = chrono::Utc::now();
+        // 현재 분의 00초로 맞추기 (예: 14:37:XX -> 14:37:00)
+        let current_minute_start = now.with_second(0).unwrap().with_nanosecond(0).unwrap();
+        // 이전 분봉 가져오기 (예: 14:36:00 ~ 14:37:00)
+        let target_minute_start = current_minute_start - chrono::Duration::minutes(1);
+        
+        let start_time = target_minute_start.timestamp();
+        let end_time = current_minute_start.timestamp();
+        
+        info!("🎯 Coinbase: Requesting candle for {} UTC", 
+              target_minute_start.format("%H:%M:%S"));
+        
+        // 1분 캔들스틱 데이터 요청 (특정 시점)
         let url = format!("{}?start={}&end={}&granularity=60", 
-                         COINBASE_API_URL,
-                         chrono::Utc::now().timestamp() - 120, // 2분 전부터
-                         chrono::Utc::now().timestamp());      // 현재까지
+                         COINBASE_API_URL, start_time, end_time);
         
         let response = self.client
             .get(&url)
@@ -93,7 +105,16 @@ impl CoinbaseClient {
         
         // 가장 최근 캔들스틱의 종가 사용
         let latest_candle = &candles[0];
+        let timestamp = latest_candle[0]; // timestamp
         let close_price = latest_candle[4]; // close price
+        
+        // 캔들스틱 시간 정보 로깅
+        let candle_time = chrono::DateTime::from_timestamp(timestamp as i64, 0)
+            .unwrap_or_default();
+        
+        info!("📊 Coinbase Candle: {:.2} USD (time: {})", 
+              close_price, 
+              candle_time.format("%H:%M:%S"));
         
         // 가격 검증
         self.validate_price(close_price)?;

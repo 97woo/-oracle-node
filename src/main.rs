@@ -8,13 +8,11 @@ use chrono::{Utc, Timelike};
 mod binance;
 mod coinbase;
 mod kraken;
-mod aggregator_client;
 mod grpc_client;
 
 use binance::BinanceClient;
 use coinbase::CoinbaseClient;
 use kraken::KrakenClient;
-// use aggregator_client::AggregatorClient;  // HTTP REST 클라이언트 (현재 미사용)
 use grpc_client::GrpcAggregatorClient;
 
 #[derive(Clone)]

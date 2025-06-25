@@ -4,6 +4,7 @@ use reqwest::Client;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, warn, error};
+use chrono::Timelike;
 use crate::PriceData;
 
 /// Kraken API URL
@@ -80,8 +81,21 @@ impl KrakenClient {
 
     /// 한 번만 가격을 가져오기 (재시도 없음)
     async fn fetch_btc_price_once(&self) -> Result<PriceData> {
-        // 1분 OHLC 데이터 요청
-        let url = format!("{}?pair=XBTUSD&interval=1", KRAKEN_API_URL);
+        // 현재 시간에서 이전 완성된 분봉 시점 계산
+        let now = chrono::Utc::now();
+        // 현재 분의 00초로 맞추기 (예: 14:37:XX -> 14:37:00)
+        let current_minute_start = now.with_second(0).unwrap().with_nanosecond(0).unwrap();
+        // 이전 분봉 가져오기 (예: 14:36:00부터)
+        let target_minute_start = current_minute_start - chrono::Duration::minutes(1);
+        
+        let since_timestamp = target_minute_start.timestamp();
+        
+        info!("🎯 Kraken: Requesting OHLC since {} UTC", 
+              target_minute_start.format("%H:%M:%S"));
+        
+        // 1분 OHLC 데이터 요청 (특정 시점부터)
+        let url = format!("{}?pair=XBTUSD&interval=1&since={}", 
+                         KRAKEN_API_URL, since_timestamp);
         
         let response = self.client
             .get(&url)
@@ -112,8 +126,17 @@ impl KrakenClient {
         
         // 가장 최근 OHLC의 종가 사용
         let latest_ohlc = &result.btc_usd[result.btc_usd.len() - 1];
+        let timestamp = latest_ohlc.0; // timestamp
         let close_price = latest_ohlc.4.parse::<f64>()
             .context("Failed to parse close price from Kraken")?;
+        
+        // OHLC 시간 정보 로깅
+        let ohlc_time = chrono::DateTime::from_timestamp(timestamp as i64, 0)
+            .unwrap_or_default();
+        
+        info!("📊 Kraken OHLC: {:.2} USD (time: {})", 
+              close_price, 
+              ohlc_time.format("%H:%M:%S"));
         
         // 가격 검증
         self.validate_price(close_price)?;
