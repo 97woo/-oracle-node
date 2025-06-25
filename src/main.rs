@@ -5,9 +5,11 @@ use tracing::{info, error};
 
 mod binance;
 mod aggregator_client;
+mod grpc_client;
 
 use binance::BinanceClient;
 use aggregator_client::AggregatorClient;
+use grpc_client::GrpcAggregatorClient;
 
 #[derive(Clone)]
 pub struct PriceData {
@@ -26,16 +28,16 @@ async fn main() -> Result<()> {
     // Create Binance client
     let binance_client = BinanceClient::new();
     
-    // Create Aggregator client
-    let aggregator_client = AggregatorClient::new("http://localhost:8081")?;
+    // Create gRPC Aggregator client (기본값)
+    let mut grpc_client = GrpcAggregatorClient::new("http://localhost:50051").await?;
     
-    // Check if Aggregator is healthy
-    match aggregator_client.check_health().await {
-        Ok(true) => info!("✅ Connected to Aggregator successfully"),
-        Ok(false) => info!("⚠️ Aggregator is unhealthy, but continuing..."),
+    // Check if gRPC Aggregator is healthy
+    match grpc_client.check_health().await {
+        Ok(true) => info!("✅ Connected to gRPC Aggregator successfully"),
+        Ok(false) => info!("⚠️ gRPC Aggregator is unhealthy, but continuing..."),
         Err(e) => {
-            error!("❌ Cannot connect to Aggregator: {}", e);
-            info!("💡 Make sure to run: python scripts/mock_aggregator.py");
+            error!("❌ Cannot connect to gRPC Aggregator: {}", e);
+            info!("💡 Make sure to run: cargo run -p aggregator");
             return Err(e);
         }
     }
@@ -57,10 +59,10 @@ async fn main() -> Result<()> {
                     price_data.timestamp
                 );
                 
-                // Send to aggregator
-                match aggregator_client.submit_price(&price_data).await {
-                    Ok(_) => info!("✅ Successfully sent price to aggregator"),
-                    Err(e) => error!("❌ Failed to send price to aggregator: {}", e),
+                // Send to gRPC aggregator
+                match grpc_client.submit_price(&price_data).await {
+                    Ok(_) => info!("✅ Successfully sent price to gRPC aggregator"),
+                    Err(e) => error!("❌ Failed to send price to gRPC aggregator: {}", e),
                 }
             }
             Err(e) => {

@@ -49,7 +49,14 @@ toml = "0.8"
 # UUID generation
 uuid = { version = "1.6", features = ["v4"] }
 
+# gRPC
+tonic = { workspace = true }
+prost = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
 mockall = { workspace = true }
 tokio-test = "0.4"
+
+[build-dependencies]
+tonic-build = "0.12"
