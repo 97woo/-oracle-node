@@ -1,10 +1,10 @@
-use anyhow::{Result, Context};
+use crate::PriceData;
+use anyhow::{Context, Result};
+use chrono::Timelike;
 use reqwest::Client;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{info, warn, error};
-use chrono::Timelike;
-use crate::PriceData;
+use tracing::{error, info, warn};
 
 /// 바이낸스 K-line API 주소 (1분 캔들스틱)
 const BINANCE_API_URL: &str = "https://api.binance.com/api/v3/klines";
@@ -19,15 +19,15 @@ type BinanceKlineResponse = Vec<[serde_json::Value; 12]>;
 
 /// 바이낸스와 통신하는 클라이언트
 pub struct BinanceClient {
-    client: Client,     // HTTP 요청을 보내는 도구
+    client: Client, // HTTP 요청을 보내는 도구
 }
 
 impl BinanceClient {
     /// 새로운 바이낸스 클라이언트를 만듭니다
     pub fn new() -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT))  // 10초 후 타임아웃
-            .user_agent("OracleVM/1.0")                     // 우리가 누구인지 알려줌
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT)) // 10초 후 타임아웃
+            .user_agent("OracleVM/1.0") // 우리가 누구인지 알려줌
             .build()
             .expect("Failed to create HTTP client");
 
@@ -42,8 +42,11 @@ impl BinanceClient {
     /// 재시도 로직이 포함된 가격 가져오기
     async fn fetch_btc_price_with_retry(&self, max_retries: u32) -> Result<PriceData> {
         for attempt in 1..=max_retries {
-            info!("Fetching BTC price from Binance (attempt {}/{})", attempt, max_retries);
-            
+            info!(
+                "Fetching BTC price from Binance (attempt {}/{})",
+                attempt, max_retries
+            );
+
             match self.fetch_btc_price_once().await {
                 Ok(price_data) => {
                     info!("Successfully fetched BTC price: ${:.2}", price_data.price);
@@ -51,17 +54,22 @@ impl BinanceClient {
                 }
                 Err(e) if attempt < max_retries => {
                     let wait_time = 2_u64.pow(attempt - 1); // 1초, 2초, 4초... (지수적 백오프)
-                    warn!("Failed to fetch price (attempt {}): {}. Retrying in {}s...", 
-                          attempt, e, wait_time);
+                    warn!(
+                        "Failed to fetch price (attempt {}): {}. Retrying in {}s...",
+                        attempt, e, wait_time
+                    );
                     sleep(Duration::from_secs(wait_time)).await;
                 }
                 Err(e) => {
-                    error!("Failed to fetch price after {} attempts: {}", max_retries, e);
+                    error!(
+                        "Failed to fetch price after {} attempts: {}",
+                        max_retries, e
+                    );
                     return Err(e);
                 }
             }
         }
-        
+
         unreachable!("This should never be reached")
     }
 
@@ -73,72 +81,82 @@ impl BinanceClient {
         let current_minute_start = now.with_second(0).unwrap().with_nanosecond(0).unwrap();
         // 이전 분봉 가져오기 (예: 14:36:00 ~ 14:37:00)
         let target_minute_start = current_minute_start - chrono::Duration::minutes(1);
-        
+
         let start_time = target_minute_start.timestamp() * 1000; // 밀리초 단위
         let end_time = current_minute_start.timestamp() * 1000;
-        
-        info!("🎯 Binance: Requesting K-line for {} UTC", 
-              target_minute_start.format("%H:%M:%S"));
-        
+
+        info!(
+            "🎯 Binance: Requesting K-line for {} UTC",
+            target_minute_start.format("%H:%M:%S")
+        );
+
         // 1. 특정 시점의 1분 K-line 데이터 요청
-        let url = format!("{}?symbol=BTCUSDT&interval=1m&startTime={}&endTime={}&limit=1", 
-                         BINANCE_API_URL, start_time, end_time);
-        
+        let url = format!(
+            "{}?symbol=BTCUSDT&interval=1m&startTime={}&endTime={}&limit=1",
+            BINANCE_API_URL, start_time, end_time
+        );
+
         // 2. 바이낸스에 HTTP 요청 보내기
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
             .context("Failed to send request to Binance")?;
-        
+
         // 3. HTTP 상태 코드 확인
         if !response.status().is_success() {
             return self.handle_http_error(response.status().as_u16());
         }
-        
+
         // 4. JSON 응답을 K-line 배열로 변환
         let klines: BinanceKlineResponse = response
             .json()
             .await
             .context("Failed to parse Binance JSON response")?;
-        
+
         if klines.is_empty() {
             anyhow::bail!("No K-line data received from Binance");
         }
-        
+
         // 5. 가장 최근 K-line의 종가 사용 (index 4 = close price)
         let latest_kline = &klines[0];
-        
+
         // K-line 시간 정보 추출
-        let open_time = latest_kline[0].as_u64()
+        let open_time = latest_kline[0]
+            .as_u64()
             .ok_or_else(|| anyhow::anyhow!("Failed to get open time from Binance K-line"))?;
-        let close_time = latest_kline[6].as_u64()
+        let close_time = latest_kline[6]
+            .as_u64()
             .ok_or_else(|| anyhow::anyhow!("Failed to get close time from Binance K-line"))?;
-        
-        let close_price_str = latest_kline[4].as_str()
+
+        let close_price_str = latest_kline[4]
+            .as_str()
             .ok_or_else(|| anyhow::anyhow!("Failed to get close price from Binance K-line"))?;
-        
+
         let price = close_price_str
             .parse::<f64>()
             .context("Failed to parse close price as number")?;
-        
+
         // K-line 시간 정보 로깅
-        let open_time_dt = chrono::DateTime::from_timestamp(open_time as i64 / 1000, 0)
-            .unwrap_or_default();
-        let close_time_dt = chrono::DateTime::from_timestamp(close_time as i64 / 1000, 0)
-            .unwrap_or_default();
-        
-        info!("📊 Binance K-line: {:.2} USD (period: {} ~ {})", 
-              price, 
-              open_time_dt.format("%H:%M:%S"),
-              close_time_dt.format("%H:%M:%S"));
-        
+        let open_time_dt =
+            chrono::DateTime::from_timestamp(open_time as i64 / 1000, 0).unwrap_or_default();
+        let close_time_dt =
+            chrono::DateTime::from_timestamp(close_time as i64 / 1000, 0).unwrap_or_default();
+
+        info!(
+            "📊 Binance K-line: {:.2} USD (period: {} ~ {})",
+            price,
+            open_time_dt.format("%H:%M:%S"),
+            close_time_dt.format("%H:%M:%S")
+        );
+
         // 6. 가격이 말이 되는지 검증
         self.validate_price(price)?;
-        
+
         // 7. 현재 시간 기록
         let timestamp = chrono::Utc::now().timestamp() as u64;
-        
+
         // 8. 최종 결과 반환
         Ok(PriceData {
             price,
@@ -165,15 +183,15 @@ impl BinanceClient {
         if price <= 0.0 {
             anyhow::bail!("Invalid price: must be positive, got {}", price);
         }
-        
+
         if price < 1000.0 {
             warn!("Unusually low BTC price: ${:.2}", price);
         }
-        
+
         if price > 1_000_000.0 {
             warn!("Unusually high BTC price: ${:.2}", price);
         }
-        
+
         Ok(())
     }
 }
@@ -192,10 +210,10 @@ mod tests {
     #[test]
     fn test_price_validation() {
         let client = BinanceClient::new();
-        
+
         // 정상적인 가격
         assert!(client.validate_price(50000.0).is_ok());
-        
+
         // 비정상적인 가격들
         assert!(client.validate_price(0.0).is_err());
         assert!(client.validate_price(-100.0).is_err());
@@ -204,7 +222,7 @@ mod tests {
     #[test]
     fn test_http_error_handling() {
         let client = BinanceClient::new();
-        
+
         // 다양한 HTTP 에러 코드 테스트
         assert!(client.handle_http_error(404).is_err());
         assert!(client.handle_http_error(429).is_err());
@@ -217,7 +235,7 @@ mod tests {
     async fn test_real_api_call() {
         let client = BinanceClient::new();
         let result = client.fetch_btc_price().await;
-        
+
         match result {
             Ok(price_data) => {
                 assert!(price_data.price > 0.0);

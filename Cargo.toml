@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 oracle-vm-common = { path = "../common" }
+rust_decimal = "1.33"
 
 # Async runtime
 tokio = { workspace = true }
