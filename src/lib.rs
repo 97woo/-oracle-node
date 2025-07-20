@@ -2,7 +2,6 @@ pub mod binance;
 pub mod coinbase;
 pub mod grpc_client;
 pub mod kraken;
-pub mod precision_test;
 pub mod safe_price;
 pub mod price_provider;
 pub mod consensus;

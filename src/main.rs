@@ -9,7 +9,6 @@ mod binance;
 mod coinbase;
 mod grpc_client;
 mod kraken;
-mod precision_test;
 mod safe_price;
 mod price_provider;
 
