@@ -3,6 +3,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use oracle_vm_common::types::PriceData;
 
 /// 안전한 BTC 가격 처리를 위한 래퍼 타입
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -204,13 +205,15 @@ pub struct SafePriceData {
 
 impl SafePriceData {
     /// 기존 PriceData에서 변환
-    pub fn from_price_data(data: &crate::PriceData) -> Result<Self> {
+    pub fn from_price_data(data: &PriceData) -> Result<Self> {
+        // Convert cents to dollars
+        let price_usd = data.price as f64 / 100.0;
         #[allow(deprecated)]
-        let safe_price = SafeBtcPrice::from_f64(data.price)?;
+        let safe_price = SafeBtcPrice::from_f64(price_usd)?;
 
         Ok(Self {
             price: safe_price,
-            timestamp: data.timestamp,
+            timestamp: data.timestamp.timestamp() as u64,
             source: data.source.clone(),
         })
     }

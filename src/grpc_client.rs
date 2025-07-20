@@ -1,4 +1,4 @@
-use crate::PriceData;
+use oracle_vm_common::types::PriceData;
 use anyhow::{Context, Result};
 use tonic::transport::Channel;
 use tonic::Request;
@@ -45,9 +45,12 @@ impl GrpcAggregatorClient {
 
     /// 가격 데이터를 gRPC로 Aggregator에 전송
     pub async fn submit_price(&mut self, price_data: &PriceData) -> Result<()> {
+        // Convert cents to dollars for gRPC
+        let price_usd = price_data.price as f64 / 100.0;
+        
         let request = Request::new(PriceRequest {
-            price: price_data.price,
-            timestamp: price_data.timestamp,
+            price: price_usd,
+            timestamp: price_data.timestamp.timestamp() as u64,
             source: price_data.source.clone(),
             node_id: self.node_id.clone(),
             signature: None, // 나중에 보안용으로 추가
@@ -55,7 +58,7 @@ impl GrpcAggregatorClient {
 
         info!(
             "📤 Sending price ${:.2} to Aggregator via gRPC...",
-            price_data.price
+            price_usd
         );
 
         match self.client.submit_price(request).await {

@@ -1,4 +1,4 @@
-use crate::{PriceData, price_provider::MultiExchangePriceProvider};
+use oracle_vm_common::types::PriceData;
 use anyhow::Result;
 use tracing::{info, warn};
 
@@ -24,8 +24,8 @@ impl ConsensusManager {
             anyhow::bail!("No price data available");
         }
         
-        // 가격만 추출
-        let mut price_values: Vec<f64> = prices.iter().map(|p| p.price).collect();
+        // 가격만 추출 (cents를 다시 달러로 변환)
+        let mut price_values: Vec<f64> = prices.iter().map(|p| p.price as f64 / 100.0).collect();
         price_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
         
         // 중간값 계산
@@ -81,7 +81,7 @@ impl ConsensusManager {
             return vec![];
         }
         
-        let mut price_values: Vec<f64> = prices.iter().map(|p| p.price).collect();
+        let mut price_values: Vec<f64> = prices.iter().map(|p| p.price as f64 / 100.0).collect();
         price_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
         
         let median = if price_values.len() % 2 == 0 {
@@ -94,7 +94,8 @@ impl ConsensusManager {
         prices
             .iter()
             .filter(|p| {
-                let deviation = ((p.price - median) / median).abs();
+                let price_usd = p.price as f64 / 100.0;
+                let deviation = ((price_usd - median) / median).abs();
                 deviation > self.max_price_deviation
             })
             .map(|p| p.source.clone())
@@ -111,6 +112,8 @@ impl Default for ConsensusManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, Utc};
+    use oracle_vm_common::types::AssetPair;
     
     #[test]
     fn test_consensus_with_all_valid_prices() {
@@ -118,18 +121,24 @@ mod tests {
         
         let prices = vec![
             PriceData {
-                price: 70000.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7000000, // $70,000 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "binance".to_string(),
             },
             PriceData {
-                price: 70100.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7010000, // $70,100 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "coinbase".to_string(),
             },
             PriceData {
-                price: 70050.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7005000, // $70,050 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "kraken".to_string(),
             },
         ];
@@ -147,18 +156,24 @@ mod tests {
         
         let prices = vec![
             PriceData {
-                price: 70000.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7000000, // $70,000 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "binance".to_string(),
             },
             PriceData {
-                price: 70100.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7010000, // $70,100 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "coinbase".to_string(),
             },
             PriceData {
-                price: 75000.0, // Outlier (>7% deviation)
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7500000, // $75,000 in cents - Outlier (>7% deviation)
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "kraken".to_string(),
             },
         ];
@@ -186,18 +201,24 @@ mod tests {
         
         let prices = vec![
             PriceData {
-                price: 70000.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7000000, // $70,000 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "binance".to_string(),
             },
             PriceData {
-                price: 75000.0, // Too different
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7500000, // $75,000 in cents - Too different
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "coinbase".to_string(),
             },
             PriceData {
-                price: 80000.0, // Too different
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 8000000, // $80,000 in cents - Too different
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "kraken".to_string(),
             },
         ];
@@ -212,18 +233,24 @@ mod tests {
         
         let prices = vec![
             PriceData {
-                price: 70000.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7000000, // $70,000 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "binance".to_string(),
             },
             PriceData {
-                price: 70100.0,
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7010000, // $70,100 in cents
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "coinbase".to_string(),
             },
             PriceData {
-                price: 75000.0, // Outlier
-                timestamp: 1700000000,
+                pair: AssetPair::btc_usd(),
+                price: 7500000, // $75,000 in cents - Outlier
+                timestamp: DateTime::from_timestamp(1700000000, 0).unwrap(),
+                volume: None,
                 source: "kraken".to_string(),
             },
         ];

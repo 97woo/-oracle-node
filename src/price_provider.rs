@@ -1,7 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-
-use crate::PriceData;
+use oracle_vm_common::types::PriceData;
 
 /// Price provider trait for different exchanges
 #[async_trait]

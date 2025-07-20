@@ -1,7 +1,8 @@
-use crate::{PriceData, price_provider::PriceProvider};
+use crate::price_provider::PriceProvider;
+use oracle_vm_common::types::{PriceData, AssetPair};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::Timelike;
+use chrono::{DateTime, Timelike};
 use reqwest::Client;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -160,8 +161,11 @@ impl BinanceClient {
 
         // 8. 최종 결과 반환
         Ok(PriceData {
-            price,
-            timestamp,
+            pair: AssetPair::btc_usd(),
+            price: (price * 100.0) as u64, // Convert to cents
+            timestamp: DateTime::from_timestamp(timestamp as i64, 0)
+                .unwrap_or_else(chrono::Utc::now),
+            volume: None,
             source: "binance".to_string(),
         })
     }

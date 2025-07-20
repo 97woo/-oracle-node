@@ -1,7 +1,8 @@
-use crate::{PriceData, price_provider::PriceProvider};
+use crate::price_provider::PriceProvider;
+use oracle_vm_common::types::{PriceData, AssetPair};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::Timelike;
+use chrono::{DateTime, Timelike};
 use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
@@ -165,8 +166,11 @@ impl KrakenClient {
         let timestamp = chrono::Utc::now().timestamp() as u64;
 
         Ok(PriceData {
-            price: close_price,
-            timestamp,
+            pair: AssetPair::btc_usd(),
+            price: (close_price * 100.0) as u64, // Convert to cents
+            timestamp: DateTime::from_timestamp(timestamp as i64, 0)
+                .unwrap_or_else(chrono::Utc::now),
+            volume: None,
             source: "kraken".to_string(),
         })
     }

@@ -10,12 +10,8 @@ pub mod consensus;
 use anyhow::Result;
 use async_trait::async_trait;
 
-#[derive(Clone, Debug)]
-pub struct PriceData {
-    pub price: f64,
-    pub timestamp: u64,
-    pub source: String,
-}
+// common 모듈의 PriceData를 사용
+pub use oracle_vm_common::types::PriceData;
 
 /// 가격 제공자 인터페이스 (TDD를 위한 trait)
 #[async_trait]
