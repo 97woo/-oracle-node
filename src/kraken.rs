@@ -1,5 +1,6 @@
-use crate::PriceData;
+use crate::{PriceData, price_provider::PriceProvider};
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use chrono::Timelike;
 use reqwest::Client;
 use serde::Deserialize;
@@ -239,5 +240,16 @@ mod tests {
                 println!("Kraken API call failed (this might be expected): {}", e);
             }
         }
+    }
+}
+
+#[async_trait]
+impl PriceProvider for KrakenClient {
+    async fn fetch_btc_price(&self) -> Result<PriceData> {
+        self.fetch_btc_price_with_retry(MAX_RETRIES).await
+    }
+    
+    fn name(&self) -> &str {
+        "kraken"
     }
 }

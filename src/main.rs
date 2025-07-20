@@ -11,11 +11,13 @@ mod grpc_client;
 mod kraken;
 mod precision_test;
 mod safe_price;
+mod price_provider;
 
 use binance::BinanceClient;
 use coinbase::CoinbaseClient;
 use grpc_client::GrpcAggregatorClient;
 use kraken::KrakenClient;
+use price_provider::PriceProvider;
 
 #[derive(Clone)]
 pub struct PriceData {
@@ -24,34 +26,16 @@ pub struct PriceData {
     pub source: String,
 }
 
-/// 지원되는 거래소 클라이언트들
-enum ExchangeClient {
-    Binance(BinanceClient),
-    Coinbase(CoinbaseClient),
-    Kraken(KrakenClient),
-}
-
-impl ExchangeClient {
-    /// 새로운 거래소 클라이언트 생성
-    fn new(exchange: &str) -> Result<Self> {
-        match exchange.to_lowercase().as_str() {
-            "binance" => Ok(ExchangeClient::Binance(BinanceClient::new())),
-            "coinbase" => Ok(ExchangeClient::Coinbase(CoinbaseClient::new())),
-            "kraken" => Ok(ExchangeClient::Kraken(KrakenClient::new())),
-            _ => anyhow::bail!(
-                "Unsupported exchange: {}. Supported: binance, coinbase, kraken",
-                exchange
-            ),
-        }
-    }
-
-    /// BTC 가격 가져오기
-    async fn fetch_btc_price(&self) -> Result<PriceData> {
-        match self {
-            ExchangeClient::Binance(client) => client.fetch_btc_price().await,
-            ExchangeClient::Coinbase(client) => client.fetch_btc_price().await,
-            ExchangeClient::Kraken(client) => client.fetch_btc_price().await,
-        }
+/// 거래소 클라이언트 생성 헬퍼
+fn create_exchange_provider(exchange: &str) -> Result<Box<dyn PriceProvider>> {
+    match exchange.to_lowercase().as_str() {
+        "binance" => Ok(Box::new(BinanceClient::new())),
+        "coinbase" => Ok(Box::new(CoinbaseClient::new())),
+        "kraken" => Ok(Box::new(KrakenClient::new())),
+        _ => anyhow::bail!(
+            "Unsupported exchange: {}. Supported: binance, coinbase, kraken",
+            exchange
+        ),
     }
 }
 
@@ -94,8 +78,8 @@ async fn main() -> Result<()> {
     info!("Exchange: {}", args.exchange);
     info!("Fetch interval: {}s", args.interval);
 
-    // Create exchange client based on CLI argument
-    let exchange_client = ExchangeClient::new(&args.exchange)?;
+    // Create exchange provider based on CLI argument
+    let exchange_provider = create_exchange_provider(&args.exchange)?;
 
     // Create gRPC Aggregator client
     let mut grpc_client = GrpcAggregatorClient::new(&args.aggregator_url).await?;
@@ -143,7 +127,7 @@ async fn main() -> Result<()> {
             collection_time.second()
         );
 
-        match exchange_client.fetch_btc_price().await {
+        match exchange_provider.fetch_btc_price().await {
             Ok(price_data) => {
                 info!(
                     "Fetched BTC price: ${:.2} at timestamp: {}",

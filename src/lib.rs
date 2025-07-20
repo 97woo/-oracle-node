@@ -4,6 +4,8 @@ pub mod grpc_client;
 pub mod kraken;
 pub mod precision_test;
 pub mod safe_price;
+pub mod price_provider;
+pub mod consensus;
 
 use anyhow::Result;
 use async_trait::async_trait;
