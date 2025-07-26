@@ -15,9 +15,9 @@ const MAX_RETRIES: u32 = 3;
 /// HTTP 요청 타임아웃 (초)
 const REQUEST_TIMEOUT: u64 = 10;
 
-/// Coinbase에서 받아오는 캔들스틱 데이터 구조
+/// Coinbase에서 받아오는 캔들 데이터 구조
 /// [timestamp, low, high, open, close, volume]
-type CoinbaseCandleResponse = Vec<[f64; 6]>;
+type CoinbaseCandleResponse = Vec<Vec<f64>>;
 
 /// Coinbase Pro와 통신하는 클라이언트
 pub struct CoinbaseClient {

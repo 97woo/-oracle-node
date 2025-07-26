@@ -8,7 +8,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-/// 바이낸스 K-line API 주소 (1분 캔들스틱)
+/// 바이낸스 API URL
 const BINANCE_API_URL: &str = "https://api.binance.com/api/v3/klines";
 /// 최대 재시도 횟수
 const MAX_RETRIES: u32 = 3;
@@ -16,8 +16,8 @@ const MAX_RETRIES: u32 = 3;
 const REQUEST_TIMEOUT: u64 = 10;
 
 /// 바이낸스에서 받아오는 K-line 데이터 구조
-/// [open_time, open, high, low, close, volume, close_time, quote_volume, count, taker_buy_volume, taker_buy_quote_volume, ignore]
-type BinanceKlineResponse = Vec<[serde_json::Value; 12]>;
+/// [timestamp, open, high, low, close, volume, close_time, quote_asset_volume, count, taker_buy_base_asset_volume, taker_buy_quote_asset_volume, ignore]
+type BinanceKlineResponse = Vec<Vec<serde_json::Value>>;
 
 /// 바이낸스와 통신하는 클라이언트
 pub struct BinanceClient {
@@ -81,18 +81,19 @@ impl BinanceClient {
         let now = chrono::Utc::now();
         // 현재 분의 00초로 맞추기 (예: 14:37:XX -> 14:37:00)
         let current_minute_start = now.with_second(0).unwrap().with_nanosecond(0).unwrap();
-        // 이전 분봉 가져오기 (예: 14:36:00 ~ 14:37:00)
+        // 이전 분봉 가져오기 (예: 14:36:00부터)
         let target_minute_start = current_minute_start - chrono::Duration::minutes(1);
-
-        let start_time = target_minute_start.timestamp() * 1000; // 밀리초 단위
-        let end_time = current_minute_start.timestamp() * 1000;
+        
+        let start_time = target_minute_start.timestamp_millis();
+        let end_time = current_minute_start.timestamp_millis();
 
         info!(
-            "🎯 Binance: Requesting K-line for {} UTC",
-            target_minute_start.format("%H:%M:%S")
+            "🎯 Binance: Requesting 1min K-line from {} to {} UTC",
+            target_minute_start.format("%H:%M:%S"),
+            current_minute_start.format("%H:%M:%S")
         );
 
-        // 1. 특정 시점의 1분 K-line 데이터 요청
+        // 1분 K-line 데이터 요청 (특정 시점)
         let url = format!(
             "{}?symbol=BTCUSDT&interval=1m&startTime={}&endTime={}&limit=1",
             BINANCE_API_URL, start_time, end_time
@@ -111,7 +112,7 @@ impl BinanceClient {
             return self.handle_http_error(response.status().as_u16());
         }
 
-        // 4. JSON 응답을 K-line 배열로 변환
+        // 4. JSON 응답을 K-line 형식으로 변환
         let klines: BinanceKlineResponse = response
             .json()
             .await
@@ -121,49 +122,39 @@ impl BinanceClient {
             anyhow::bail!("No K-line data received from Binance");
         }
 
-        // 5. 가장 최근 K-line의 종가 사용 (index 4 = close price)
-        let latest_kline = &klines[0];
-
-        // K-line 시간 정보 추출
-        let open_time = latest_kline[0]
-            .as_u64()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get open time from Binance K-line"))?;
-        let close_time = latest_kline[6]
-            .as_u64()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get close time from Binance K-line"))?;
-
-        let close_price_str = latest_kline[4]
+        // 5. 첫 번째 (그리고 유일한) K-line에서 종가 추출
+        let kline = &klines[0];
+        let close_price = kline[4]
             .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get close price from Binance K-line"))?;
-
-        let price = close_price_str
+            .ok_or_else(|| anyhow::anyhow!("Close price is not a string"))?
             .parse::<f64>()
             .context("Failed to parse close price as number")?;
 
+        let timestamp = kline[0]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Timestamp is not a number"))?
+            / 1000; // Convert from milliseconds to seconds
+
         // K-line 시간 정보 로깅
-        let open_time_dt =
-            chrono::DateTime::from_timestamp(open_time as i64 / 1000, 0).unwrap_or_default();
-        let close_time_dt =
-            chrono::DateTime::from_timestamp(close_time as i64 / 1000, 0).unwrap_or_default();
+        let kline_time = chrono::DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_default();
 
         info!(
-            "📊 Binance K-line: {:.2} USD (period: {} ~ {})",
-            price,
-            open_time_dt.format("%H:%M:%S"),
-            close_time_dt.format("%H:%M:%S")
+            "📊 Binance K-line: {:.2} USD (time: {})",
+            close_price,
+            kline_time.format("%H:%M:%S")
         );
 
         // 6. 가격이 말이 되는지 검증
-        self.validate_price(price)?;
+        self.validate_price(close_price)?;
 
-        // 7. 현재 시간 기록
-        let timestamp = chrono::Utc::now().timestamp() as u64;
+        // 7. 현재 시간을 타임스탬프로 사용
+        let current_timestamp = chrono::Utc::now().timestamp() as u64;
 
         // 8. 최종 결과 반환
         Ok(PriceData {
             pair: AssetPair::btc_usd(),
-            price: (price * 100.0) as u64, // Convert to cents
-            timestamp: DateTime::from_timestamp(timestamp as i64, 0)
+            price: (close_price * 100.0) as u64, // Convert to cents
+            timestamp: DateTime::from_timestamp(current_timestamp as i64, 0)
                 .unwrap_or_else(chrono::Utc::now),
             volume: None,
             source: "binance".to_string(),
