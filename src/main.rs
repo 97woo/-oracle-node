@@ -18,7 +18,7 @@ use grpc_client::GrpcAggregatorClient;
 use kraken::KrakenClient;
 use price_provider::PriceProvider;
 
-// PriceData는 oracle_vm_common::types에서 가져옴
+// PriceData는 common::types에서 가져옴
 use oracle_vm_common::types::PriceData;
 
 /// 거래소 클라이언트 생성 헬퍼

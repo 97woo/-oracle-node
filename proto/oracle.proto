@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package oracle;
+
+// Oracle Service - Oracle Node와 Aggregator 간 통신
+service OracleService {
+  // 단일 가격 데이터 전송
+  rpc SubmitPrice(PriceRequest) returns (PriceResponse);
+  
+  // 실시간 가격 스트림 (양방향)
+  rpc StreamPrices(stream PriceRequest) returns (stream AggregatedPriceUpdate);
+  
+  // 헬스체크
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+  
+  // Oracle Node 설정 업데이트
+  rpc UpdateConfig(ConfigRequest) returns (ConfigResponse);
+  
+  // 집계된 가격 조회
+  rpc GetAggregatedPrice(GetPriceRequest) returns (GetPriceResponse);
+}
+
+// 가격 데이터 요청
+message PriceRequest {
+  double price = 1;                    // BTC 가격 (USD)
+  uint64 timestamp = 2;               // Unix timestamp (초)
+  string source = 3;                  // 데이터 소스 ("binance", "bithumb" 등)
+  string node_id = 4;                 // Oracle Node 고유 ID
+  optional string signature = 5;       // 서명 (보안용, 선택사항)
+}
+
+// 가격 데이터 응답
+message PriceResponse {
+  bool success = 1;                   // 성공 여부
+  string message = 2;                 // 응답 메시지
+  optional double aggregated_price = 3; // 집계된 가격 (선택사항)
+  uint64 timestamp = 4;               // 서버 처리 시간
+}
+
+// 실시간 집계 가격 업데이트
+message AggregatedPriceUpdate {
+  double aggregated_price = 1;        // 집계된 가격
+  uint32 data_points = 2;             // 사용된 데이터 포인트 수
+  uint64 timestamp = 3;               // 집계 시간
+  repeated string active_nodes = 4;    // 활성 Oracle Node 목록
+}
+
+// 헬스체크 요청
+message HealthRequest {
+  string node_id = 1;                 // 요청하는 노드 ID
+}
+
+// 헬스체크 응답
+message HealthResponse {
+  bool healthy = 1;                   // 서버 상태
+  uint64 timestamp = 2;               // 응답 시간
+  uint32 active_nodes = 3;            // 활성 노드 수
+  string version = 4;                 // 서버 버전
+}
+
+// 설정 업데이트 요청
+message ConfigRequest {
+  string node_id = 1;                 // 대상 노드 ID
+  optional uint32 fetch_interval = 2; // 가격 수집 간격 (초)
+  optional uint32 timeout = 3;        // 타임아웃 (초)
+  optional string aggregator_url = 4; // Aggregator URL
+}
+
+// 설정 업데이트 응답
+message ConfigResponse {
+  bool success = 1;                   // 업데이트 성공 여부
+  string message = 2;                 // 응답 메시지
+}
+
+// 집계 가격 조회 요청
+message GetPriceRequest {
+  optional string source_filter = 1;  // 특정 소스만 필터링 (선택사항)
+}
+
+// 집계 가격 조회 응답
+message GetPriceResponse {
+  bool success = 1;                   // 조회 성공 여부
+  double aggregated_price = 2;        // 집계된 가격
+  uint32 data_points = 3;             // 사용된 데이터 포인트 수
+  uint64 last_update = 4;             // 마지막 업데이트 시간
+  repeated PriceDataPoint recent_prices = 5; // 최근 가격 데이터
+}
+
+// 가격 데이터 포인트
+message PriceDataPoint {
+  double price = 1;                   // 가격
+  uint64 timestamp = 2;               // 시간
+  string source = 3;                  // 소스
+  string node_id = 4;                 // 노드 ID
+}
+
+// 에러 정보
+message ErrorInfo {
+  string code = 1;                    // 에러 코드
+  string message = 2;                 // 에러 메시지
+  map<string, string> details = 3;    // 추가 정보
+}
